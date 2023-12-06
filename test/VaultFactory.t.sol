@@ -1,5 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
-pragma solidity ^0.8.17;
+pragma solidity ^0.8.0;
 
 import "forge-std/Test.sol";
 import "../src/contracts/Vault.sol";
@@ -14,9 +13,10 @@ contract VaultFactoryTest is Test {
 
     VaultFactory vaultFactory;
     address asset;
+
     function setUp() public {
-        vaultFactory = new VaultFactory();
-        asset = address(new ERC20("USDC","usdc"));
+        vaultFactory = new VaultFactory(msg.sender);
+        asset = address(new ERC20("USDC", "usdc"));
     }
 
     function test_DeployVault() public {
@@ -26,9 +26,21 @@ contract VaultFactoryTest is Test {
         address roleManger = vm.addr(1);
         //test
         vm.expectEmit(address(vaultFactory));
-        emit NewVault(vaultFactory.getVaultFromUnderlying(asset,name,symbol), asset);
-        address vault = vaultFactory.deployNewVault(asset, name, symbol, roleManger, 10000);
-        assertEq(address(vaultFactory.getVaultFromUnderlying(asset,name,symbol)), address(vault));
+        emit NewVault(
+            vaultFactory.getVaultFromUnderlying(asset, name, symbol),
+            asset
+        );
+        address vault = vaultFactory.deployNewVault(
+            asset,
+            name,
+            symbol,
+            roleManger,
+            10000
+        );
+        assertEq(
+            address(vaultFactory.getVaultFromUnderlying(asset, name, symbol)),
+            address(vault)
+        );
         assertTrue(vaultFactory.isVaultDeployed(vault));
     }
 
@@ -40,7 +52,9 @@ contract VaultFactoryTest is Test {
         //test
         vm.assume(randomAddress != address(this));
         vm.prank(randomAddress);
-        vm.expectRevert("Ownable: caller is not the owner");
+        vm.expectRevert(
+            "Must have DEFAULT_ADMIN_ROLE role to deploy new Vault"
+        );
         vaultFactory.deployNewVault(asset, name, symbol, roleManger, 10000);
     }
 
@@ -50,6 +64,7 @@ contract VaultFactoryTest is Test {
         string memory symbol = "usdc.rv";
         address roleManger = vm.addr(1);
         //test
+        vm.prank(msg.sender);
         vaultFactory.shutdownFactory();
         vm.expectRevert(Shutdown.selector);
         vaultFactory.deployNewVault(asset, name, symbol, roleManger, 10000);
@@ -57,11 +72,13 @@ contract VaultFactoryTest is Test {
 
     function test_ShutdownFactory() public {
         vm.expectEmit(address(vaultFactory));
+        vm.startPrank(msg.sender);
         vaultFactory.shutdown();
         emit FactoryShutdown();
         vaultFactory.shutdownFactory();
         vm.expectRevert(Shutdown.selector);
         vaultFactory.shutdownFactory();
+        vm.stopPrank();
     }
 
     function test_NoDuplicateVaults() public {
@@ -70,9 +87,21 @@ contract VaultFactoryTest is Test {
         string memory symbol = "usdc.rv";
         address roleManger = vm.addr(1);
         //test
-        address vault = vaultFactory.deployNewVault(asset, name, symbol, roleManger, 10000);
+        address vault = vaultFactory.deployNewVault(
+            asset,
+            name,
+            symbol,
+            roleManger,
+            10000
+        );
         vm.expectRevert();
-        address vault1 = vaultFactory.deployNewVault(asset, name, symbol, roleManger, 10000);
+        address vault1 = vaultFactory.deployNewVault(
+            asset,
+            name,
+            symbol,
+            roleManger,
+            10000
+        );
     }
 
     function test_IsVaultDeployed() public {
@@ -81,7 +110,13 @@ contract VaultFactoryTest is Test {
         string memory symbol = "usdc.rv";
         address roleManger = vm.addr(1);
         //test
-        address vault = vaultFactory.deployNewVault(asset, name, symbol, roleManger, 10000);
+        address vault = vaultFactory.deployNewVault(
+            asset,
+            name,
+            symbol,
+            roleManger,
+            10000
+        );
         assertTrue(vaultFactory.isVaultDeployed(vault));
         assertFalse(vaultFactory.isVaultDeployed(address(0)));
     }
