@@ -1,10 +1,12 @@
 pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/Context.sol";
+import "@openzeppelin/contracts/access/AccessControlEnumerable.sol";
 import "@openzeppelin/contracts/proxy/Clones.sol";
 import "./Vault.sol";
 
-contract VaultFactory is Ownable {
+contract VaultFactory is Context, AccessControlEnumerable {
     using Clones for address;
 
     error Shutdown();
@@ -14,8 +16,11 @@ contract VaultFactory is Ownable {
 
     address public immutable vaultImplementation;
     bool public shutdown;
+    bytes32 public constant EOA_ADMIN = keccak256("EOA_ADMIN");
 
-    constructor() {
+    constructor(address eoaAdmin) {
+        _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        _setupRole(EOA_ADMIN, eoaAdmin);
         vaultImplementation = address(new Vault());
     }
 
@@ -28,7 +33,13 @@ contract VaultFactory is Ownable {
         bytes32 _salt
     ) internal returns (address) {
         address vault = vaultImplementation.cloneDeterministic(_salt);
-        Vault(vault).initialize(asset, _name, _symbol, roleManager, profitMaxUnlockTime);
+        Vault(vault).initialize(
+            asset,
+            _name,
+            _symbol,
+            roleManager,
+            profitMaxUnlockTime
+        );
         return vault;
     }
 
@@ -47,12 +58,23 @@ contract VaultFactory is Ownable {
         string memory _symbol,
         address roleManager,
         uint256 profitMaxUnlockTime
-    ) external onlyOwner returns (address) {
+    ) external returns (address) {
+        require(
+            hasRole(DEFAULT_ADMIN_ROLE, _msgSender()),
+            "Must have DEFAULT_ADMIN_ROLE role to deploy new Vault"
+        );
         if (shutdown) {
             revert Shutdown();
         }
-        bytes32 salt = keccak256(abi.encode(msg.sender, asset, _name, _symbol));
-        address vaultAddress = _createAndInitializeVault(asset, _name, _symbol, roleManager, profitMaxUnlockTime, salt);
+        bytes32 salt = keccak256(abi.encode(asset, _name, _symbol));
+        address vaultAddress = _createAndInitializeVault(
+            asset,
+            _name,
+            _symbol,
+            roleManager,
+            profitMaxUnlockTime,
+            salt
+        );
         emit NewVault(vaultAddress, asset);
         return vaultAddress;
     }
@@ -62,7 +84,12 @@ contract VaultFactory is Ownable {
      * @dev A one time switch available for the owner to stop new
      * vaults from being deployed through the factory.
      */
-    function shutdownFactory() external onlyOwner {
+    function shutdownFactory() external {
+        require(
+            hasRole(EOA_ADMIN, _msgSender()),
+            "Must have EOA_ADMIN role to shutdown"
+        );
+
         if (shutdown) {
             revert Shutdown();
         }
@@ -78,14 +105,16 @@ contract VaultFactory is Ownable {
      * @param _name The token name, the vault provides as shares to depositors
      * @param _symbol The token symbol,the vault provides as shares to depositors.
      */
-    function getVaultFromUnderlying(address asset, string memory _name, string memory _symbol)
-    external
-    view
-    onlyOwner
-    returns (address)
-    {
-        bytes32 salt = keccak256(abi.encode(msg.sender, asset, _name, _symbol));
-        address vault = vaultImplementation.predictDeterministicAddress(salt, address(this));
+    function getVaultFromUnderlying(
+        address asset,
+        string memory _name,
+        string memory _symbol
+    ) external view returns (address) {
+        bytes32 salt = keccak256(abi.encode(asset, _name, _symbol));
+        address vault = vaultImplementation.predictDeterministicAddress(
+            salt,
+            address(this)
+        );
 
         return vault;
     }
